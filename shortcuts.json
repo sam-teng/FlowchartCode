@@ -1,0 +1,18 @@
+{
+  "shortcuts": {
+    "new": "<Control-n>",
+    "open": "<Control-o>",
+    "save": "<Control-s>",
+    "undo": "<Control-z>",
+    "redo": "<Control-y>",
+    "generate": "<Control-g>",
+    "run": "<F5>",
+    "preview": "<Control-F5>",
+    "stop": "<Escape>",
+    "delete": "<Delete>",
+    "autocomplete": "<Tab>",
+    "doc_lookup": "<Control-k>",
+    "pip_search": "<Control-p>",
+    "help": "<F1>"
+  }
+}

@@ -1,0 +1,6 @@
+# Python 快取
+__pycache__/
+*.py[cod]
+
+# opencode 本機 session
+OPENCODE-ses_*.json

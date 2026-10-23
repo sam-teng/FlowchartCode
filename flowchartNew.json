@@ -1,0 +1,54 @@
+{
+  "elements": [
+    {
+      "id": "580d46d1-375c-44fe-a15b-45cb29ede00b",
+      "type": "Start/End",
+      "x": 400,
+      "y": 50,
+      "code": "",
+      "condition": null,
+      "loop_type": null,
+      "function_name": null,
+      "function_params": null,
+      "is_lambda": null,
+      "return_value": null,
+      "class_name": null,
+      "parent_class": null,
+      "attributes": null,
+      "methods": null,
+      "decorator": null,
+      "subflowchart": null
+    },
+    {
+      "id": "25d65208-31e0-4f42-afd5-8f4785ed5ee0",
+      "type": "Process",
+      "x": 400,
+      "y": 150,
+      "code": "",
+      "condition": null,
+      "loop_type": null,
+      "function_name": null,
+      "function_params": null,
+      "is_lambda": null,
+      "return_value": null,
+      "class_name": null,
+      "parent_class": null,
+      "attributes": null,
+      "methods": null,
+      "decorator": null,
+      "subflowchart": null
+    }
+  ],
+  "connections": [
+    [
+      0,
+      1,
+      "Body",
+      "",
+      0
+    ]
+  ],
+  "variables": {},
+  "libraries": [],
+  "custom_modules": []
+}
