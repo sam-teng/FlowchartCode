@@ -4,3 +4,28 @@ __pycache__/
 
 # opencode 本機 session
 OPENCODE-ses_*.json
+
+# 歷史版本（僅保留 new5.1 入口檔）
+FlowChartCode*.py
+flowchart_to_code_gui.py
+flowchart_to_code_gui_advanced.py
+flowchart_to_code_gui_advanced*.py
+!flowchart_to_code_gui_advanced_with_connection_edit_new5.1.py
+
+# 舊版/測試/無關腳本
+nmapChartApp.py
+test.py
+新增*.txt
+*.pickle
+
+# 執行期設定檔（本機狀態，不纳入版控）
+policy.json
+settings.json
+shortcuts.json
+snippets.json
+
+# 打包產物
+exe/
+build/
+dist/
+*.spec
