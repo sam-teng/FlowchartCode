@@ -5,12 +5,15 @@ __pycache__/
 # opencode 本機 session
 OPENCODE-ses_*.json
 
-# 歷史版本（僅保留 new5.1 入口檔）
+# 歷史版本（入口檔改名為 FlowchartCode.py）
 FlowChartCode*.py
+!FlowchartCode.py
 flowchart_to_code_gui.py
 flowchart_to_code_gui_advanced.py
 flowchart_to_code_gui_advanced*.py
-!flowchart_to_code_gui_advanced_with_connection_edit_new5.1.py
+
+# 本機備份
+backup_*.py
 
 # 舊版/測試/無關腳本
 nmapChartApp.py
