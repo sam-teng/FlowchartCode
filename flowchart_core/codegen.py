@@ -4,6 +4,7 @@ from typing import Optional
 
 from .concurrency import CodegenContext, ThreadCounter
 from .extensions import ExtensionRegistry, collect_declarations
+from .languages import LanguageBackend, get_language
 from .models import ConnectionType, ElementType, Flowchart
 from .symbols import SymbolTable
 
@@ -11,13 +12,18 @@ from .symbols import SymbolTable
 class CodeGenerator:
     def __init__(self, flowchart: Flowchart, symbols: Optional[SymbolTable] = None,
                  registry: Optional[ExtensionRegistry] = None,
-                 libraries=None, custom_modules=None, variables=None):
+                 libraries=None, custom_modules=None, variables=None,
+                 language: Optional[LanguageBackend | str] = None):
         self.flowchart = flowchart
         self.symbols = symbols or SymbolTable()
         self.registry = registry or ExtensionRegistry()
         self.libraries = list(libraries or [])
         self.custom_modules = list(custom_modules or [])
         self.variables = dict(variables or {})
+        if isinstance(language, LanguageBackend):
+            self.lang = language
+        else:
+            self.lang = get_language(language)
         self._outgoing_index: dict = {}
         self._build_index(flowchart)
 
@@ -54,21 +60,26 @@ class CodeGenerator:
             ctx, visited,
         )
 
-        header = ["import threading"]
-        for lib in self.libraries:
-            header.append(f"import {lib}")
-        for mod_name, _path in self.custom_modules:
-            header.append(f"import {mod_name}")
+        header: list[str] = []
+        threading_line = self.lang.threading_header()
+        if threading_line:
+            header.append(threading_line)
+        header.extend(self.lang.header_imports(self.libraries, self.custom_modules))
 
         lines: list[str] = []
         lines.extend(header)
         lines.append("")
-        for decl in declarations:
-            lines.append(decl)
-        if declarations:
+        emitted_decls: list[str] = []
+        if self.lang.supports_extensions:
+            for decl in declarations:
+                emitted = self.lang.extension_declaration(decl)
+                if emitted is not None:
+                    emitted_decls.append(emitted)
+        lines.extend(emitted_decls)
+        if emitted_decls:
             lines.append("")
         for name, value in self.variables.items():
-            lines.append(f"{name} = {value!r}" if isinstance(value, str) else f"{name} = {value!r}")
+            lines.append(self.lang.assignment(name, value))
         if self.variables:
             lines.append("")
         lines.extend(container_lines)
@@ -92,9 +103,35 @@ class CodeGenerator:
             current = flowchart.element_by_id(body[0].target_id) if body else None
         return lines
 
+    def _emit_block_body(self, flowchart: Flowchart, element, ctx: CodegenContext,
+                         visited: set) -> tuple[list[str], bool]:
+        """產生 BODY 連線子流程，回傳 (行, 是否有內容)。"""
+        lines: list[str] = []
+        emitted = False
+        for conn in self.outgoing(flowchart, element.id, ConnectionType.BODY):
+            target = flowchart.element_by_id(conn.target_id)
+            if target is None:
+                continue
+            sub = self._traverse(flowchart, target, ctx.child(1), visited)
+            if sub:
+                lines.extend(sub)
+                emitted = True
+        return lines, emitted
+
+    def _maybe_empty(self, ctx: CodegenContext, emitted: bool) -> list[str]:
+        if emitted:
+            return []
+        empty = self.lang.empty_body(ctx.indent + 1)
+        return [ctx.line(empty, ctx.indent + 1)] if empty else []
+
+    def _close(self, ctx: CodegenContext) -> list[str]:
+        closed = self.lang.block_close(ctx.indent)
+        return [ctx.line(c, ctx.indent) for c in closed] if closed else []
+
     def _emit_element(self, flowchart: Flowchart, element, ctx: CodegenContext,
                       visited: set) -> list[str]:
         lines: list[str] = []
+        lang = self.lang
         etype = element.type
         calls = self.outgoing(flowchart, element.id, ConnectionType.CALL)
 
@@ -106,25 +143,18 @@ class CodeGenerator:
                 lines.append(ctx.line(element.code))
         elif etype == ElementType.OUTPUT:
             if (element.code or "").strip():
-                lines.append(ctx.line(f"print({element.code})"))
+                lines.append(ctx.line(lang.print_stmt(element.code)))
         elif etype == ElementType.DECISION:
             if element.condition:
-                lines.append(ctx.line(f"if {element.condition}:"))
-                body_emitted = False
-                for target_id, _prior in [(c.target_id, c.priority)
-                                          for c in self.outgoing(flowchart, element.id, ConnectionType.BODY)]:
-                    target = flowchart.element_by_id(target_id)
-                    if target is None:
-                        continue
-                    sub = self._traverse(flowchart, target, ctx.child(1), visited)
-                    if sub:
-                        lines.extend(sub)
-                        body_emitted = True
-                if not body_emitted:
-                    lines.append(ctx.line("pass", ctx.indent + 1))
+                lines.append(ctx.line(lang.if_open(element.condition)))
+                body_lines, body_emitted = self._emit_block_body(
+                    flowchart, element, ctx, visited)
+                lines.extend(body_lines)
+                lines.extend(self._maybe_empty(ctx, body_emitted))
                 exit_conns = self.outgoing(flowchart, element.id, ConnectionType.EXIT)
                 if exit_conns:
-                    lines.append(ctx.line("else:"))
+                    lines.append(ctx.line(lang.else_open()))
+                    else_lines: list[str] = []
                     else_emitted = False
                     for conn in exit_conns:
                         target = flowchart.element_by_id(conn.target_id)
@@ -132,25 +162,21 @@ class CodeGenerator:
                             continue
                         sub = self._traverse(flowchart, target, ctx.child(1), visited)
                         if sub:
-                            lines.extend(sub)
+                            else_lines.extend(sub)
                             else_emitted = True
-                    if not else_emitted:
-                        lines.append(ctx.line("pass", ctx.indent + 1))
+                    lines.extend(else_lines)
+                    lines.extend(self._maybe_empty(ctx, else_emitted))
+                lines.extend(self._close(ctx))
         elif etype == ElementType.LOOP:
             if element.condition:
-                keyword = "for" if element.loop_type == "for" else "while"
-                lines.append(ctx.line(f"{keyword} {element.condition}:"))
-                body_emitted = False
-                for conn in self.outgoing(flowchart, element.id, ConnectionType.BODY):
-                    target = flowchart.element_by_id(conn.target_id)
-                    if target is None:
-                        continue
-                    sub = self._traverse(flowchart, target, ctx.child(1), visited)
-                    if sub:
-                        lines.extend(sub)
-                        body_emitted = True
-                if not body_emitted:
-                    lines.append(ctx.line("pass", ctx.indent + 1))
+                opener = (lang.for_open if element.loop_type == "for"
+                          else lang.while_open)
+                lines.append(ctx.line(opener(element.condition)))
+                body_lines, body_emitted = self._emit_block_body(
+                    flowchart, element, ctx, visited)
+                lines.extend(body_lines)
+                lines.extend(self._maybe_empty(ctx, body_emitted))
+                lines.extend(self._close(ctx))
                 for conn in self.outgoing(flowchart, element.id, ConnectionType.EXIT):
                     target = flowchart.element_by_id(conn.target_id)
                     if target is None:
@@ -162,17 +188,19 @@ class CodeGenerator:
             if element.function_name:
                 params = element.function_params or ""
                 if element.decorator:
-                    lines.append(ctx.line(f"@{element.decorator}"))
+                    dec = lang.decorator_line(element.decorator)
+                    if dec:
+                        lines.append(ctx.line(dec))
                 if element.is_lambda:
                     lines.append(ctx.line(
-                        f"{element.function_name} = lambda {params}: "
+                        lang.lambda_head(element.function_name, params)
                     ))
                     if element.subflowchart:
                         ret = self._first_expression(element.subflowchart)
-                        lines[-1] = lines[-1] + (ret or "None")
+                        lines[-1] = lines[-1] + (ret or "None") + lang.lambda_tail()
                 else:
                     lines.append(ctx.line(
-                        f"def {element.function_name}({params}):"
+                        lang.function_open(element.function_name, params)
                     ))
                     body_emitted = False
                     if element.subflowchart is not None:
@@ -184,21 +212,22 @@ class CodeGenerator:
                         if sub:
                             lines.extend(sub)
                             body_emitted = True
-                    if not body_emitted:
-                        lines.append(ctx.line("pass", ctx.indent + 1))
+                    lines.extend(self._maybe_empty(ctx, body_emitted))
+                    lines.extend(self._close(ctx))
         elif etype == ElementType.CLASS:
             if element.class_name:
-                parent = f"({element.parent_class})" if element.parent_class else ""
-                lines.append(ctx.line(f"class {element.class_name}{parent}:"))
+                lines.append(ctx.line(
+                    lang.class_open(element.class_name, element.parent_class or "")
+                ))
                 class_emitted = False
                 if element.attributes:
                     for attr, value in element.attributes.items():
-                        lines.append(ctx.line(f"{attr} = {value!r}" if isinstance(value, str)
-                                              else f"{attr} = {value}", ctx.indent + 1))
+                        lines.append(ctx.line(
+                            lang.class_attribute(attr, value), ctx.indent + 1))
                         class_emitted = True
                 for method in element.methods or []:
                     lines.append(ctx.line(
-                        f"def {method.get('name', '')}({method.get('params', '')}):",
+                        lang.method_open(method.get('name', ''), method.get('params', '')),
                         ctx.indent + 1,
                     ))
                     method_emitted = False
@@ -210,36 +239,46 @@ class CodeGenerator:
                         if sub_lines:
                             lines.extend(sub_lines)
                             method_emitted = True
-                    if not method_emitted:
-                        lines.append(ctx.line("pass", ctx.indent + 2))
+                    method_ctx = ctx.child(1)
+                    lines.extend(self._maybe_empty(method_ctx, method_emitted))
+                    closed = lang.block_close(method_ctx.indent)
+                    for c in closed:
+                        lines.append(method_ctx.line(c))
                     class_emitted = True
                 if not class_emitted:
-                    lines.append(ctx.line("pass", ctx.indent + 1))
+                    lines.extend(self._maybe_empty(ctx, False))
+                lines.extend(self._close(ctx))
         elif etype == ElementType.START_END:
             if element.return_value:
-                lines.append(ctx.line(f"return {element.return_value}"))
+                lines.append(ctx.line(lang.return_stmt(element.return_value)))
         elif etype == ElementType.COMMENT:
             if element.code:
-                lines.append(ctx.line(f"# {element.code}"))
+                lines.append(ctx.line(lang.comment(element.code)))
         else:
             ext = self.registry.get(etype)
             if ext is not None:
-                try:
-                    lines.extend(ext.emit_code(element, ctx))
-                except Exception as exc:
-                    lines.append(ctx.line(f"# 擴充元素產生失敗：{exc}"))
+                label = getattr(getattr(ext, "meta", None), "label", str(etype))
+                if lang.supports_extensions:
+                    try:
+                        lines.extend(lang.extension_code(element, ctx, ext))
+                    except Exception as exc:
+                        lines.append(ctx.line(lang.comment(f"擴充元素產生失敗：{exc}")))
+                else:
+                    lines.append(ctx.line(lang.unsupported_extension(label)))
                 if getattr(ext, "indents_body", False):
-                    body_emitted = False
-                    for conn in self.outgoing(flowchart, element.id, ConnectionType.BODY):
-                        target = flowchart.element_by_id(conn.target_id)
-                        if target is None:
-                            continue
-                        sub = self._traverse(flowchart, target, ctx.child(1), visited)
-                        if sub:
-                            lines.extend(sub)
-                            body_emitted = True
-                    if not body_emitted:
-                        lines.append(ctx.line("pass", ctx.indent + 1))
+                    body_lines, body_emitted = self._emit_block_body(
+                        flowchart, element, ctx, visited)
+                    if lang.supports_extensions:
+                        lines.extend(body_lines)
+                        lines.extend(self._maybe_empty(ctx, body_emitted))
+                    elif body_emitted:
+                        opener = lang.block_open(label)
+                        if opener is not None:
+                            lines.append(ctx.line(opener))
+                            lines.extend(body_lines)
+                            lines.extend(self._close(ctx))
+                        else:
+                            lines.extend(body_lines)
                     for conn in self.outgoing(flowchart, element.id, ConnectionType.EXIT):
                         target = flowchart.element_by_id(conn.target_id)
                         if target is None:

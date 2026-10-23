@@ -60,3 +60,86 @@ class MyElement(ElementExtension):
 - 外掛程式碼仍會受到「安全政策」對流程圖程式碼的黑/白名單檢核
   （emit_code 產生的程式碼在驗證與執行時同樣受政策約束）。
 - 範例：`sample_queue_element.py`（QueuePush / QueuePop 佇列元素）。
+
+## 目標語言擴充（多語言程式碼產生）
+
+內建 Python 與 JavaScript 後端；「目標語言」選單可切換，選擇會存入
+`settings.json`。新增語言方式：繼承 `flowchart_core.LanguageBackend`
+並呼叫 `flowchart_core.register_language(backend)`：
+
+```python
+from flowchart_core import LanguageBackend, register_language
+
+class RubyBackend(LanguageBackend):
+    name = "ruby"                 # 內部名稱（settings / API 用）
+    display_name = "Ruby"         # 顯示名稱
+    file_extension = ".rb"
+    supports_extensions = False   # True 時沿用 Python 擴充元素 emit_code
+    supports_execution = False    # 動畫執行固定走 Python 流程語意
+
+    def header_imports(self, libraries, custom_modules):
+        return [f'require "{lib}"' for lib in libraries]
+
+    def threading_header(self):
+        return None
+
+    def print_stmt(self, expr):
+        return f"puts {expr}"
+
+    def comment(self, text):
+        return f"# {text}"
+
+    def return_stmt(self, expr):
+        return f"return {expr}"
+
+    def assignment(self, name, value):
+        return f"{name} = {value!r}"
+
+    def if_open(self, cond):
+        return f"if {cond}"
+
+    def else_open(self):
+        return "else"
+
+    def while_open(self, cond):
+        return f"while {cond}"
+
+    def for_open(self, cond):
+        return f"for {cond}"
+
+    def empty_body(self, level=0):
+        return "end"
+
+    def block_close(self, level=0):
+        return ["end"]
+
+    def function_open(self, name, params):
+        return f"def {name}({params})"
+
+    def lambda_head(self, name, params):
+        return f"{name} = lambda {params} "
+
+    def lambda_tail(self):
+        return ""
+
+    def class_open(self, name, parent):
+        return f"class {name} < {parent}" if parent else f"class {name}"
+
+    def method_open(self, name, params):
+        return f"def {name}({params})"
+
+    def class_attribute(self, name, value):
+        return f"{name} = {value!r}"
+
+register_language(RubyBackend())
+```
+
+說明：
+
+- 大括號語言在 `if_open`/`while_open` 等開頭行加 `{`，並實作
+  `block_close()` 回傳收尾行（如 `"}"`）；Python 類縮排語言
+  `block_close()` 回傳 `[]`、`empty_body()` 回傳 `"pass"`。
+- `supports_extensions=False` 時，Python 專屬擴充元素（Thread、
+  SyncEvent 等）會自動降級為註解。
+- 執行動畫（F5）始終以 Python 流程語意執行，與目標語言選項無關。
+

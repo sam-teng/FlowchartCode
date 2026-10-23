@@ -12,6 +12,11 @@ from .concurrency import register_builtins as register_concurrency_builtins
 from .plan import ExecutionPlan, compile_plan
 from .executor import FlowchartExecutor
 from .codegen import CodeGenerator
+from .languages import (
+    LanguageBackend, LanguageRegistry, PythonBackend, JavaScriptBackend,
+    get_language, language_display_names, language_registry, list_languages,
+    register_language,
+)
 from .serialization import load_project, save_project
 from .history import History
 from .snippets import Snippet, SnippetLibrary
@@ -43,4 +48,7 @@ __all__ = [
     "CompletionItem", "CompletionProvider", "CallableInfo", "get_callable_info",
     "list_module_callables", "list_installed_distributions", "pypi_client",
     "create_default_registry",
+    "LanguageBackend", "LanguageRegistry", "PythonBackend", "JavaScriptBackend",
+    "get_language", "list_languages", "language_display_names",
+    "language_registry", "register_language",
 ]

@@ -12,7 +12,8 @@ from flowchart_core import (
     Element, ElementType, ExecutionEvent, ExtensionRegistry, Flowchart,
     FlowchartExecutor, History, Project, SnippetLibrary, SymbolTable,
     analyze, compile_plan, create_default_registry, format_diagnostics,
-    load_project, save_project,
+    get_language, language_display_names, language_registry, load_project,
+    save_project,
 )
 from flowchart_core.completion import CompletionProvider
 from flowchart_core.events import EventKind
@@ -131,6 +132,8 @@ class FlowchartApp:
         self._element_var = tk.StringVar(value=ElementType.PROCESS)
         self._connection_var = tk.StringVar(value=ConnectionType.BODY)
         self._mode_var = tk.StringVar(value=self.settings.connection_mode)
+        self._language_var = tk.StringVar(
+            value=get_language(self.settings.language).display_name)
         self._speed_var = tk.StringVar(value="正常")
         self._diag_items: list = []
 
@@ -190,6 +193,13 @@ class FlowchartApp:
         ttk.OptionMenu(
             left_inner, self._mode_var, self.settings.connection_mode,
             *CONNECTION_MODES, command=self._on_connection_mode_changed,
+        ).pack(fill=tk.X, padx=6)
+
+        ttk.Label(left_inner, text="目標語言：").pack(pady=(8, 2), padx=6, anchor="w")
+        ttk.OptionMenu(
+            left_inner, self._language_var,
+            get_language(self.settings.language).display_name,
+            *language_display_names(), command=self._on_language_changed,
         ).pack(fill=tk.X, padx=6)
 
         for label, command in [
@@ -322,6 +332,18 @@ class FlowchartApp:
         for view in self._all_views():
             view.set_ports_visible(value == "連線埠")
         self._set_status(f"連線方式：{value}")
+
+    def _on_language_changed(self, value: str) -> None:
+        name = language_registry().display_to_name(value)
+        self.settings.set_language(name)
+        backend = get_language(name)
+        if not backend.supports_execution:
+            self._set_status(
+                f"目標語言：{backend.display_name}"
+                "（動畫執行僅支援 Python 流程語意）"
+            )
+        else:
+            self._set_status(f"目標語言：{backend.display_name}")
 
     def _all_views(self):
         yield self.view
@@ -727,16 +749,25 @@ class FlowchartApp:
 
     def generate_code(self) -> None:
         self._rebuild_symbols()
+        lang_name = language_registry().display_to_name(self._language_var.get())
         generator = CodeGenerator(
             self.project.flowchart, self.symbols, self.registry,
             libraries=self.project.libraries,
             custom_modules=self.project.custom_modules,
             variables=self.project.variables,
+            language=lang_name,
         )
         code = generator.generate()
         self.code_text.delete("1.0", tk.END)
         self.code_text.insert("1.0", code)
-        self._set_status("已產生程式碼")
+        backend = get_language(lang_name)
+        if backend.supports_execution:
+            self._set_status(f"已產生程式碼（{backend.display_name}）")
+        else:
+            self._set_status(
+                f"已產生程式碼（{backend.display_name}）；"
+                "動畫執行使用 Python 流程語意"
+            )
 
     def _speed_delays(self) -> tuple:
         speed = self._speed_var.get()

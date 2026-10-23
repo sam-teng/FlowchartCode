@@ -303,6 +303,104 @@ def main() -> int:
         expect(set(CONNECTION_MODES) >= {"窄環", "連線埠", "兩次點擊", "右鍵拖曳"},
                "四種連線模式皆已定義", failures)
 
+    print("== 17. 多目標語言擴充 ==")
+    expect("python" in flowchart_core.list_languages(), "內建 Python 後端", failures)
+    expect("javascript" in flowchart_core.list_languages(), "內建 JavaScript 後端", failures)
+
+    class _GoBackend(flowchart_core.LanguageBackend):
+        name = "go"
+        display_name = "Go"
+        file_extension = ".go"
+        supports_extensions = False
+        supports_execution = False
+
+        def header_imports(self, libraries, custom_modules):
+            return [f'import "{lib}"' for lib in libraries]
+
+        def threading_header(self):
+            return None
+
+        def print_stmt(self, expr):
+            return f"fmt.Println({expr})"
+
+        def comment(self, text):
+            return f"// {text}"
+
+        def return_stmt(self, expr):
+            return f"return {expr}"
+
+        def assignment(self, name, value):
+            return f"{name} := {value!r}"
+
+        def if_open(self, cond):
+            return f"if {cond} {{"
+
+        def else_open(self):
+            return "} else {"
+
+        def while_open(self, cond):
+            return f"for {cond} {{"
+
+        def for_open(self, cond):
+            return f"for {cond} {{"
+
+        def block_close(self, level=0):
+            return ["}"]
+
+        def empty_body(self, level=0):
+            return None
+
+        def function_open(self, name, params):
+            return f"func {name}({params}) {{"
+
+        def lambda_head(self, name, params):
+            return f"{name} := func({params}) "
+
+        def lambda_tail(self):
+            return ""
+
+        def class_open(self, name, parent):
+            return f"type {name} struct {{}}"
+
+        def method_open(self, name, params):
+            return f"func {name}({params}) {{"
+
+        def class_attribute(self, name, value):
+            return f"{name} {value!r}"
+
+    flowchart_core.register_language(_GoBackend())
+    expect("go" in flowchart_core.list_languages(), "動態註冊 Go 後端", failures)
+    expect(flowchart_core.get_language("go").display_name == "Go", "取得自訂後端", failures)
+    expect(flowchart_core.get_language("不存在").name == "python", "未知語言回退 Python", failures)
+
+    js_gen = flowchart_core.CodeGenerator(
+        flowchart, symbols, registry, variables={"seed": 1}, language="javascript"
+    )
+    js_code = js_gen.generate()
+    expect("console.log(" in js_code, "JS 使用 console.log", failures)
+    expect("function greet(name) {" in js_code, "JS 函式定義", failures)
+    expect("} else {" in js_code, "JS else 大括號", failures)
+    expect("import threading" not in js_code, "JS 不含 threading", failures)
+    expect("// SyncEvent：僅支援 Python" in js_code, "JS 擴充元素降級為註解", failures)
+    expect("done_evt" not in js_code.split("//")[0] or "done_evt.set" not in js_code,
+           "JS 不產生 done_evt.set()", failures)
+
+    go_gen = flowchart_core.CodeGenerator(
+        flowchart, symbols, registry, variables={"seed": 1}, language="go"
+    )
+    go_code = go_gen.generate()
+    expect("fmt.Println(" in go_code, "Go 使用 fmt.Println", failures)
+    expect("func greet(name) {" in go_code, "Go 函式定義", failures)
+    expect("for i in range(4) {" in go_code, "Go 迴圈包大括號", failures)
+
+    js_backend = flowchart_core.get_language("javascript")
+    expect(js_backend.file_extension == ".js", "語言後端提供副檔名", failures)
+    expect(not js_backend.supports_execution, "JS 後端標示不支援執行", failures)
+    expect(flowchart_core.get_language("python").supports_execution,
+           "Python 後端支援執行", failures)
+    expect(flowchart_core.language_registry().display_to_name("JavaScript") == "javascript",
+           "顯示名稱對映回內部名稱", failures)
+
     print()
     if failures:
         print(f"自測失敗 {len(failures)} 項：")
