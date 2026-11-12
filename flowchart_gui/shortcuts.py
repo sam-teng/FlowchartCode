@@ -19,6 +19,7 @@ DEFAULT_SHORTCUTS = {
     "autocomplete": "<Control-space>",
     "doc_lookup": "<Control-k>",
     "pip_search": "<Control-p>",
+    "code_to_flowchart": "<Control-i>",
     "help": "<F1>",
 }
 
@@ -36,6 +37,7 @@ ACTION_LABELS = {
     "autocomplete": "自動補全",
     "doc_lookup": "函式說明查詢",
     "pip_search": "pip 套件搜尋",
+    "code_to_flowchart": "程式碼轉流程圖",
     "help": "使用說明",
 }
 

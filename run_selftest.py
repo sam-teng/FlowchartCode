@@ -401,6 +401,57 @@ def main() -> int:
     expect(flowchart_core.language_registry().display_to_name("JavaScript") == "javascript",
            "顯示名稱對映回內部名稱", failures)
 
+    print("== 18. 程式碼轉流程圖（Code to Flowchart）==")
+    sample_code = """
+import math
+total = 0
+for i in range(4):
+    total += i
+print(total)
+if total > 3:
+    print('big')
+else:
+    print('small')
+
+def add_ten(x):
+    return x + 10
+
+result = add_ten(total)
+"""
+    proj = flowchart_core.code_to_project(sample_code)
+    expect("math" in proj.libraries, "解析 import 庫包含 math", failures)
+    expect(proj.flowchart is not None, "生成 Flowchart 實例", failures)
+    
+    elem_types = [e.type for e in proj.flowchart.elements]
+    expect(flowchart_core.ElementType.LOOP in elem_types, "解析 For 迴圈為 Loop 元素", failures)
+    expect(flowchart_core.ElementType.DECISION in elem_types, "解析 If 為 Decision 元素", failures)
+    expect(flowchart_core.ElementType.OUTPUT in elem_types, "解析 print 為 Output 元素", failures)
+    expect(flowchart_core.ElementType.FUNCTION in elem_types, "解析 def 為 Function 元素", failures)
+
+    # 檢查函式子流程圖
+    fn_elem = next(e for e in proj.flowchart.elements if e.type == flowchart_core.ElementType.FUNCTION)
+    expect(fn_elem.function_name == "add_ten", "函式名稱正確", failures)
+    expect(fn_elem.subflowchart is not None, "函式具有子流程圖", failures)
+    fn_sub_types = [e.type for e in fn_elem.subflowchart.elements]
+    expect(flowchart_core.ElementType.START_END in fn_sub_types, "子流程圖包含 Start/End 節點", failures)
+
+    # 檢查連線
+    conns = proj.flowchart.connections
+    conn_types = {c.type for c in conns}
+    expect("Body" in conn_types, "包含 Body 連線", failures)
+    expect("Exit" in conn_types, "包含 Exit 連線", failures)
+    expect("Call" in conn_types, "函式呼叫建立 Call 連線", failures)
+
+    # 檢查座標排版
+    for el in proj.flowchart.elements:
+        expect(el.x > 0 and el.y > 0, f"元素 {el.type} 具備有效座標 ({el.x}, {el.y})", failures)
+
+    # 雙向 Round-trip 驗證
+    regen_code = flowchart_core.CodeGenerator(proj.flowchart, libraries=proj.libraries).generate()
+    expect("for i in range(4):" in regen_code, "Round-trip 保留 for 迴圈", failures)
+    expect("if total > 3:" in regen_code, "Round-trip 保留 if 條件", failures)
+    expect("def add_ten(x):" in regen_code, "Round-trip 保留函式定義", failures)
+
     print()
     if failures:
         print(f"自測失敗 {len(failures)} 項：")
@@ -413,3 +464,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

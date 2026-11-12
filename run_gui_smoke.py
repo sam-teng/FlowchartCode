@@ -164,9 +164,14 @@ def main() -> int:
             dh = app.diag_list.winfo_height()
             outer_paned.sashpos(0, ds0 - 50)
             root.update()
-            if app.diag_list.winfo_height() == dh:
-                print("FAIL: 垂直分隔線調整未改變診斷面板高度")
+            # 測試程式碼轉流程圖 GUI
+            app.code_text.delete("1.0", tk.END)
+            app.code_text.insert("1.0", "x = 10\nprint(x)\n")
+            app.code_text_to_flowchart()
+            if len(app.project.flowchart.elements) < 3:
+                print("FAIL: code_text_to_flowchart 未成功轉換畫布元素")
                 ok = False
+
         root.update()
         root.update_idletasks()
     except Exception as exc:

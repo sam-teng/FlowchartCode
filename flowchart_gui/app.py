@@ -27,6 +27,7 @@ from .dialogs import (
 )
 from .module_browser import ModuleBrowserDialog
 from .pypi_browser import PyPIBrowserDialog
+from .code_to_flowchart_dialog import CodeToFlowchartDialog
 from .settings import CONNECTION_MODES, DEFAULT_CONNECTION_MODE, SettingsManager
 from .shortcuts import ACTION_LABELS, ShortcutManager, display_name
 
@@ -206,6 +207,7 @@ class FlowchartApp:
             ("上一步（復原）", self.undo),
             ("下一步（重做）", self.redo),
             ("產生程式碼", self.generate_code),
+            ("程式碼轉流程圖", self.open_code_to_flowchart),
             ("執行動畫（F5）", self.run_code),
             ("快速預覽（Ctrl+F5）", self.preview_code),
             ("停止（Esc）", self.stop_execution),
@@ -239,6 +241,13 @@ class FlowchartApp:
         code_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
         self.code_text = tk.Text(code_frame, width=30, height=8, undo=True)
         self.code_text.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+
+        code_btn_bar = ttk.Frame(code_frame)
+        code_btn_bar.pack(fill=tk.X, padx=2, pady=2)
+        ttk.Button(code_btn_bar, text="轉為流程圖", command=self.code_text_to_flowchart).pack(
+            side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 2))
+        ttk.Button(code_btn_bar, text="更多...", command=self.open_code_to_flowchart).pack(
+            side=tk.RIGHT)
 
         output_frame = ttk.LabelFrame(right, text="輸出")
         output_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
@@ -275,6 +284,9 @@ class FlowchartApp:
 
         tools_menu = tk.Menu(menubar, tearoff=0)
         tools_menu.add_command(
+            label=f"程式碼轉流程圖（{display_name(self.shortcuts.get('code_to_flowchart'))}）",
+            command=self.open_code_to_flowchart)
+        tools_menu.add_command(
             label=f"pip 套件搜尋（{display_name(self.shortcuts.get('pip_search'))}）",
             command=self._open_pypi)
         tools_menu.add_command(label="模組函式瀏覽器", command=self._open_module_browser)
@@ -304,6 +316,7 @@ class FlowchartApp:
             "autocomplete": self._trigger_autocomplete,
             "doc_lookup": lambda: DocLookupDialog(self.root, self.provider),
             "pip_search": self._open_pypi,
+            "code_to_flowchart": self.open_code_to_flowchart,
             "help": lambda: HelpDialog(self.root),
         }
 
@@ -1052,6 +1065,57 @@ class FlowchartApp:
 
     def _trigger_autocomplete(self) -> None:
         self.code_text.event_generate("<Control-space>")
+
+    def open_code_to_flowchart(self) -> None:
+        initial_code = self.code_text.get("1.0", tk.END).strip()
+        dialog = CodeToFlowchartDialog(
+            self.root,
+            initial_code=initial_code,
+            on_converted=self._apply_converted_project,
+        )
+        dialog.show()
+
+    def code_text_to_flowchart(self) -> None:
+        code = self.code_text.get("1.0", tk.END).strip()
+        if not code:
+            messagebox.showinfo("提示", "程式碼編輯區為空，請先輸入或產生程式碼")
+            return
+        try:
+            from flowchart_core import code_to_project
+            project = code_to_project(code)
+            self._apply_converted_project(project, replace=True)
+        except SyntaxError as syn_err:
+            messagebox.showerror(
+                "語法錯誤",
+                f"Python 語法錯誤（第 {syn_err.lineno} 行）：\n{syn_err.msg}\n{syn_err.text or ''}",
+            )
+        except Exception as exc:
+            messagebox.showerror("轉換失敗", f"無法轉換程式碼：{exc}")
+
+    def _apply_converted_project(self, new_project: Project, replace: bool = True) -> None:
+        self._snapshot()
+        if replace or not self.project.flowchart.elements:
+            self._restore_project(new_project)
+            self._set_status(f"已轉換為流程圖（共 {len(new_project.flowchart.elements)} 個元素）")
+        else:
+            # Append elements and connections with y-offset to avoid overlap
+            max_y = max((e.y for e in self.project.flowchart.elements), default=0.0)
+            y_offset = max_y + 100.0
+            for el in new_project.flowchart.elements:
+                el.y += y_offset
+                self.project.flowchart.add_element(el)
+            for conn in new_project.flowchart.connections:
+                self.project.flowchart.add_connection(conn)
+            for k, v in new_project.variables.items():
+                if k not in self.project.variables:
+                    self.project.variables[k] = v
+            for lib in new_project.libraries:
+                if lib not in self.project.libraries:
+                    self.project.libraries.append(lib)
+            self._rebuild_symbols()
+            self.view.attach(self.project.flowchart)
+            self._mark_dirty()
+            self._set_status(f"已附加流程圖（目前共 {len(self.project.flowchart.elements)} 個元素）")
 
     # ---------- helpers ----------
 
