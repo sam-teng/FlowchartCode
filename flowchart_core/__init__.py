@@ -18,6 +18,7 @@ from .languages import (
     register_language,
 )
 from .serialization import load_project, save_project
+from .code_to_flowchart import ASTToFlowchartConverter, code_to_flowchart, code_to_project
 from .history import History
 from .snippets import Snippet, SnippetLibrary
 from .diagnostics import Diagnostic, analyze, format_diagnostics
@@ -44,6 +45,7 @@ __all__ = [
     "ElementMeta", "ExtensionRegistry", "FieldSpec", "collect_declarations",
     "register_concurrency_builtins", "ExecutionPlan", "compile_plan",
     "FlowchartExecutor", "CodeGenerator", "load_project", "save_project", "History",
+    "code_to_flowchart", "code_to_project", "ASTToFlowchartConverter",
     "Snippet", "SnippetLibrary", "Diagnostic", "analyze", "format_diagnostics",
     "CompletionItem", "CompletionProvider", "CallableInfo", "get_callable_info",
     "list_module_callables", "list_installed_distributions", "pypi_client",
@@ -52,3 +54,4 @@ __all__ = [
     "get_language", "list_languages", "language_display_names",
     "language_registry", "register_language",
 ]
+
